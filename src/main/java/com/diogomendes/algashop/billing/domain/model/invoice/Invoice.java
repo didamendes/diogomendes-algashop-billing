@@ -1,5 +1,6 @@
 package com.diogomendes.algashop.billing.domain.model.invoice;
 
+import com.diogomendes.algashop.billing.domain.model.AbstractAuditableEntityAggregateRoot;
 import com.diogomendes.algashop.billing.domain.model.DomainException;
 import jakarta.persistence.*;
 import lombok.*;
@@ -23,11 +24,11 @@ import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Setter(PRIVATE)
 @Getter
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
 @NoArgsConstructor(access = PROTECTED)
 @AllArgsConstructor(access = PROTECTED)
 @Entity
-public class Invoice {
+public class Invoice extends AbstractAuditableEntityAggregateRoot<Invoice> {
 
     @Include
     @Id
@@ -72,7 +73,7 @@ public class Invoice {
 
         BigDecimal totalAmount = items.stream().map(LineItem::getAmount).reduce(ZERO, BigDecimal::add);
 
-        return new Invoice(
+        Invoice invoice = new Invoice(
                 generateTimeBasedUUID(),
                 orderId,
                 customerId,
@@ -87,6 +88,11 @@ public class Invoice {
                 payer,
                 null
         );
+
+        invoice.registerEvent(new InvoiceIssuedEvent(invoice.getId(), invoice.getCustomerId(),
+                invoice.getOrderId(), invoice.getIssuedAt()));
+
+        return invoice;
     }
 
     public Set<LineItem> getItems() {
@@ -112,6 +118,8 @@ public class Invoice {
         }
         setPaidAt(now());
         setStatus(PAID);
+        registerEvent(new InvoicePaidEvent(this.getId(), this.getCustomerId(), this.getOrderId(),
+                this.getPaidAt()));
     }
 
     public void cancel(String cancelReason) {
@@ -122,6 +130,8 @@ public class Invoice {
         setCancelReason(cancelReason);
         setCanceledAt(now());
         setStatus(CANCELED);
+        registerEvent(new InvoiceCanceledEvent(this.getId(), this.getCustomerId(), this.getOrderId(),
+                this.getCanceledAt()));
     }
 
     public void assignPaymentGatewayCode(String code) {
